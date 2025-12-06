@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { sanitizeString, validateBiodata } from "@/lib/validate";
 import FormData from "form-data";
 
+export const runtime = "nodejs"; // WAJIB untuk bisa akses env + upload cloudinary
+
 // CORS
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +16,7 @@ export function OPTIONS() {
   return NextResponse.json({}, { status: 200, headers: corsHeaders });
 }
 
-// 🔑 Unique Key Generator
+// Generate Unique Key
 function generateUniqueKey() {
   const rand = Math.random().toString(36).substring(2, 10);
   const time = Date.now().toString(36);
@@ -58,14 +60,28 @@ export async function POST(req) {
       );
     }
 
-    // ========================
-    // Upload ke Cloudinary
-    // ========================
+    // ===============================
+    // UPLOAD FOTO KE CLOUDINARY
+    // ===============================
     let fileUrl = null;
 
     if (body.foto_base64) {
       const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
       const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+      // Debug untuk memastikan ENV kebaca
+      console.log("CLOUD_NAME:", CLOUD_NAME);
+      console.log("UPLOAD_PRESET:", UPLOAD_PRESET);
+
+      if (!CLOUD_NAME || !UPLOAD_PRESET) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Cloudinary ENV tidak ditemukan.",
+          },
+          { status: 500, headers: corsHeaders }
+        );
+      }
 
       const uploadURL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
@@ -76,15 +92,17 @@ export async function POST(req) {
       const uploadRes = await fetch(uploadURL, {
         method: "POST",
         body: form,
-        headers: form.getHeaders(), // ← WAJIB!! kalau tidak, Cloudinary akan reject
+        headers: form.getHeaders(),
       });
 
       const uploadJson = await uploadRes.json();
 
+      // Debug error Cloudinary
+      console.log("UPLOAD RESPONSE:", uploadJson);
+
       if (!uploadJson.secure_url) {
-        console.log("UPLOAD ERROR:", uploadJson);
         return NextResponse.json(
-          { success: false, message: "Upload foto gagal." },
+          { success: false, message: "Upload foto gagal.", debug: uploadJson },
           { status: 400, headers: corsHeaders }
         );
       }
@@ -93,7 +111,7 @@ export async function POST(req) {
     }
 
     // ===============================
-    // Simpan ke DB
+    // SIMPAN DATA KE DATABASE
     // ===============================
     const uniqueKey = generateUniqueKey();
 
@@ -125,6 +143,7 @@ export async function POST(req) {
       { status: 201, headers: corsHeaders }
     );
   } catch (err) {
+    console.log("SERVER ERROR:", err);
     return NextResponse.json(
       { success: false, message: "Server error", error: err.message },
       { status: 500, headers: corsHeaders }
