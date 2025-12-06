@@ -54,31 +54,25 @@ export async function POST(req) {
       );
     }
 
-    let fileName = null;
+    // ===============================
+    // 📸 Simpan Foto Base64 LANGSUNG (tanpa write file)
+    // ===============================
     let fileUrl = null;
 
-    // ===============================
-    // 📸 Simpan Foto Base64
-    // ===============================
     if (body.foto_base64) {
-      const base64Data = body.foto_base64.replace(/^data:image\/\w+;base64,/, "");
-      const buffer = Buffer.from(base64Data, "base64");
+      // Pastikan string base64 valid
+      if (!body.foto_base64.startsWith("data:image/")) {
+        return NextResponse.json(
+          { success: false, message: "Format foto tidak valid." },
+          { status: 400, headers: corsHeaders }
+        );
+      }
 
-      fileName = `foto_${Date.now()}_${Math.random()
-        .toString(36)
-        .substring(2, 10)}.png`;
-
-      const uploadDir = path.join(process.cwd(), "public", "uploads");
-      await fs.mkdir(uploadDir, { recursive: true });
-
-      const filePath = path.join(uploadDir, fileName);
-      await fs.writeFile(filePath, buffer);
-
-      fileUrl = `/uploads/${fileName}`;
+      fileUrl = body.foto_base64; // langsung simpan base64
     }
 
     // ===============================
-    // 🧹 Data Bersih + Generate unique_key
+    // 🧹 Data Bersih + unique_key
     // ===============================
     const uniqueKey = generateUniqueKey();
 
@@ -95,10 +89,13 @@ export async function POST(req) {
         kec: sanitizeString(body.kec),
         kel: sanitizeString(body.kel),
 
-        nama_file: fileName,
+        // Tidak perlu nama_file lagi
+        nama_file: null,
+
+        // Simpan base64
         path: fileUrl,
 
-        unique_key: uniqueKey, // ⬅ SIMPAN ke database
+        unique_key: uniqueKey,
       },
     });
 
@@ -108,7 +105,7 @@ export async function POST(req) {
     return NextResponse.json(
       {
         success: true,
-        unique_key: uniqueKey, // ⬅ WAJIB ADA!
+        unique_key: uniqueKey,
         data: created,
       },
       { status: 201, headers: corsHeaders }
@@ -121,3 +118,4 @@ export async function POST(req) {
     );
   }
 }
+
