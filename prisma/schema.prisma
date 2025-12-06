@@ -1,0 +1,30 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model biodata {
+  id            Int       @id @default(autoincrement())
+  nama          String    @db.VarChar(100)
+  nickname      String    @db.VarChar(100)
+  tanggal_lahir DateTime  @db.Date
+  tempat_lahir  String    @db.VarChar(100)
+  jabatan       String    @db.VarChar(100)
+  jenis_kelamin String    @db.VarChar(20)
+  prov          String    @db.VarChar(100)
+  kab           String    @db.VarChar(100)
+  kec           String    @db.VarChar(100)
+  kel           String    @db.VarChar(100)
+  created_at    DateTime? @default(now()) @db.Timestamp(0)
+  nama_file     String?   @db.VarChar(255)
+  path          String?   @db.VarChar(255)
+
+  // YANG PALING PENTING: tambahkan @unique dan jangan nullable kalau bisa
+  unique_key    String    @unique @db.VarChar(255)
+
+  @@map("biodata")
+}
