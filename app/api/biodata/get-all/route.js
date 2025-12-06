@@ -1,9 +1,8 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { sanitizeString, validateBiodata } from "@/lib/validate";
-import fs from "fs/promises";
-import path from "path";
 
+// CORS
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -14,15 +13,16 @@ export function OPTIONS() {
   return NextResponse.json({}, { status: 200, headers: corsHeaders });
 }
 
-// ===============================
 // 🔑 Unique Key Generator
-// ===============================
 function generateUniqueKey() {
   const rand = Math.random().toString(36).substring(2, 10);
   const time = Date.now().toString(36);
   return `UNQ-${rand}${time}`;
 }
 
+// ===============================
+// GET ALL BIODATA
+// ===============================
 export async function GET() {
   try {
     const data = await prisma.biodata.findMany({
@@ -41,11 +41,14 @@ export async function GET() {
   }
 }
 
+// ===============================
+// POST — CREATE BIODATA
+// ===============================
 export async function POST(req) {
   try {
     const body = await req.json();
 
-    // Validasi form
+    // Validasi
     const err = validateBiodata(body);
     if (err) {
       return NextResponse.json(
@@ -55,12 +58,12 @@ export async function POST(req) {
     }
 
     // ===============================
-    // 📸 Simpan Foto Base64 LANGSUNG (tanpa write file)
+    // 📸 Upload Foto Base64 → Cloudinary
     // ===============================
     let fileUrl = null;
+    let publicId = null;
 
     if (body.foto_base64) {
-      // Pastikan string base64 valid
       if (!body.foto_base64.startsWith("data:image/")) {
         return NextResponse.json(
           { success: false, message: "Format foto tidak valid." },
@@ -68,14 +71,42 @@ export async function POST(req) {
         );
       }
 
-      fileUrl = body.foto_base64; // langsung simpan base64
+      try {
+        const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+        const preset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+        const uploadRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file: body.foto_base64,
+              upload_preset: preset,
+              folder: "registrasi",
+            }),
+          }
+        ).then((r) => r.json());
+
+        if (!uploadRes.secure_url) {
+          throw new Error("Upload gagal");
+        }
+
+        fileUrl = uploadRes.secure_url;
+        publicId = uploadRes.public_id;
+      } catch (e) {
+        console.error("Cloudinary error:", e);
+        return NextResponse.json(
+          { success: false, message: "Upload foto gagal." },
+          { status: 500, headers: corsHeaders }
+        );
+      }
     }
 
-    // ===============================
-    // 🧹 Data Bersih + unique_key
-    // ===============================
+    // Unique Key
     const uniqueKey = generateUniqueKey();
 
+    // Simpan ke database
     const created = await prisma.biodata.create({
       data: {
         nama: sanitizeString(body.nama),
@@ -89,19 +120,16 @@ export async function POST(req) {
         kec: sanitizeString(body.kec),
         kel: sanitizeString(body.kel),
 
-        // Tidak perlu nama_file lagi
-        nama_file: null,
+        // Simpan public_id (optional)
+        nama_file: publicId,
 
-        // Simpan base64
+        // Simpan URL Cloudinary
         path: fileUrl,
 
         unique_key: uniqueKey,
       },
     });
 
-    // ===============================
-    // 🔥 RETURN unique_key KE FRONTEND
-    // ===============================
     return NextResponse.json(
       {
         success: true,
@@ -110,7 +138,6 @@ export async function POST(req) {
       },
       { status: 201, headers: corsHeaders }
     );
-
   } catch (err) {
     return NextResponse.json(
       { success: false, message: "Server error", error: err.message },
@@ -118,4 +145,3 @@ export async function POST(req) {
     );
   }
 }
-
