@@ -1,9 +1,8 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { sanitizeString, validateBiodata } from "@/lib/validate";
-import FormData from "form-data";
 
-export const runtime = "nodejs"; // WAJIB untuk bisa akses env + upload cloudinary
+export const runtime = "nodejs"; // WAJIB untuk Cloudinary + env
 
 // CORS
 const corsHeaders = {
@@ -16,16 +15,16 @@ export function OPTIONS() {
   return NextResponse.json({}, { status: 200, headers: corsHeaders });
 }
 
-// Generate Unique Key
+// Unique Key Generator
 function generateUniqueKey() {
   const rand = Math.random().toString(36).substring(2, 10);
   const time = Date.now().toString(36);
   return `UNQ-${rand}${time}`;
 }
 
-// ===============================
+// ======================================
 // GET ALL BIODATA
-// ===============================
+// ======================================
 export async function GET() {
   try {
     const data = await prisma.biodata.findMany({
@@ -44,14 +43,14 @@ export async function GET() {
   }
 }
 
-// ===============================
+// ======================================
 // POST — CREATE BIODATA
-// ===============================
+// ======================================
 export async function POST(req) {
   try {
     const body = await req.json();
 
-    // Validasi form
+    // Validasi input
     const err = validateBiodata(body);
     if (err) {
       return NextResponse.json(
@@ -60,44 +59,37 @@ export async function POST(req) {
       );
     }
 
-    // ===============================
-    // UPLOAD FOTO KE CLOUDINARY
-    // ===============================
+    // ======================================
+    // UPLOAD FOTO KE CLOUDINARY (FIX VERSION)
+    // ======================================
     let fileUrl = null;
 
     if (body.foto_base64) {
       const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
       const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET;
 
-      // Debug untuk memastikan ENV kebaca
-      console.log("CLOUD_NAME:", CLOUD_NAME);
-      console.log("UPLOAD_PRESET:", UPLOAD_PRESET);
+      console.log("ENV:", CLOUD_NAME, UPLOAD_PRESET);
 
       if (!CLOUD_NAME || !UPLOAD_PRESET) {
         return NextResponse.json(
-          {
-            success: false,
-            message: "Cloudinary ENV tidak ditemukan.",
-          },
+          { success: false, message: "Cloudinary ENV tidak ditemukan." },
           { status: 500, headers: corsHeaders }
         );
       }
 
       const uploadURL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
+      // ❗ Gunakan FormData bawaan runtime, bukan dari 'form-data'
       const form = new FormData();
       form.append("file", body.foto_base64);
       form.append("upload_preset", UPLOAD_PRESET);
 
       const uploadRes = await fetch(uploadURL, {
         method: "POST",
-        body: form,
-        headers: form.getHeaders(),
+        body: form, // ❗ Jangan tambahkan getHeaders()
       });
 
       const uploadJson = await uploadRes.json();
-
-      // Debug error Cloudinary
       console.log("UPLOAD RESPONSE:", uploadJson);
 
       if (!uploadJson.secure_url) {
@@ -110,9 +102,9 @@ export async function POST(req) {
       fileUrl = uploadJson.secure_url;
     }
 
-    // ===============================
+    // ======================================
     // SIMPAN DATA KE DATABASE
-    // ===============================
+    // ======================================
     const uniqueKey = generateUniqueKey();
 
     const created = await prisma.biodata.create({
@@ -135,11 +127,7 @@ export async function POST(req) {
     });
 
     return NextResponse.json(
-      {
-        success: true,
-        unique_key: uniqueKey,
-        data: created,
-      },
+      { success: true, unique_key: uniqueKey, data: created },
       { status: 201, headers: corsHeaders }
     );
   } catch (err) {
