@@ -48,7 +48,7 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    // Validasi
+    // Validasi form
     const err = validateBiodata(body);
     if (err) {
       return NextResponse.json(
@@ -57,56 +57,44 @@ export async function POST(req) {
       );
     }
 
-    // ===============================
-    // 📸 Upload Foto Base64 → Cloudinary
-    // ===============================
+    // ============================
+    // Upload Foto ke Cloudinary
+    // ============================
     let fileUrl = null;
-    let publicId = null;
 
     if (body.foto_base64) {
-      if (!body.foto_base64.startsWith("data:image/")) {
+      const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+      const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+      const uploadURL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+
+      const formData = new FormData();
+      formData.append("file", body.foto_base64);  // base64
+      formData.append("upload_preset", UPLOAD_PRESET);
+
+      const uploadRes = await fetch(uploadURL, {
+        method: "POST",
+        body: formData
+      });
+
+      const uploadJson = await uploadRes.json();
+
+      if (!uploadJson.secure_url) {
+        console.log(uploadJson);
         return NextResponse.json(
-          { success: false, message: "Format foto tidak valid." },
+          { success: false, message: "Upload foto gagal." },
           { status: 400, headers: corsHeaders }
         );
       }
 
-      try {
-        const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-        const preset = process.env.CLOUDINARY_UPLOAD_PRESET;
-
-        const uploadRes = await fetch(
-          `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              file: body.foto_base64,
-              upload_preset: preset,
-              folder: "registrasi",
-            }),
-          }
-        ).then((r) => r.json());
-
-        if (!uploadRes.secure_url) {
-          throw new Error("Upload gagal");
-        }
-
-        fileUrl = uploadRes.secure_url;
-        publicId = uploadRes.public_id;
-      } catch (e) {
-        console.error("Cloudinary error:", e);
-        return NextResponse.json(
-          { success: false, message: "Upload foto gagal." },
-          { status: 500, headers: corsHeaders }
-        );
-      }
+      fileUrl = uploadJson.secure_url;
     }
 
-    // Unique Key
+    // ===============================
+    // Bersihkan data
+    // ===============================
     const uniqueKey = generateUniqueKey();
 
-    // Simpan ke database
     const created = await prisma.biodata.create({
       data: {
         nama: sanitizeString(body.nama),
@@ -120,11 +108,8 @@ export async function POST(req) {
         kec: sanitizeString(body.kec),
         kel: sanitizeString(body.kel),
 
-        // Simpan public_id (optional)
-        nama_file: publicId,
-
-        // Simpan URL Cloudinary
-        path: fileUrl,
+        nama_file: null,
+        path: fileUrl,   // ← Cloudinary secure_url
 
         unique_key: uniqueKey,
       },
@@ -138,6 +123,7 @@ export async function POST(req) {
       },
       { status: 201, headers: corsHeaders }
     );
+
   } catch (err) {
     return NextResponse.json(
       { success: false, message: "Server error", error: err.message },
