@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { sanitizeString, validateBiodata } from "@/lib/validate";
+import FormData from "form-data";
 
 // CORS
 const corsHeaders = {
@@ -57,9 +58,9 @@ export async function POST(req) {
       );
     }
 
-    // ============================
-    // Upload Foto ke Cloudinary
-    // ============================
+    // ========================
+    // Upload ke Cloudinary
+    // ========================
     let fileUrl = null;
 
     if (body.foto_base64) {
@@ -68,19 +69,20 @@ export async function POST(req) {
 
       const uploadURL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
 
-      const formData = new FormData();
-      formData.append("file", body.foto_base64);  // base64
-      formData.append("upload_preset", UPLOAD_PRESET);
+      const form = new FormData();
+      form.append("file", body.foto_base64);
+      form.append("upload_preset", UPLOAD_PRESET);
 
       const uploadRes = await fetch(uploadURL, {
         method: "POST",
-        body: formData
+        body: form,
+        headers: form.getHeaders(), // ← WAJIB!! kalau tidak, Cloudinary akan reject
       });
 
       const uploadJson = await uploadRes.json();
 
       if (!uploadJson.secure_url) {
-        console.log(uploadJson);
+        console.log("UPLOAD ERROR:", uploadJson);
         return NextResponse.json(
           { success: false, message: "Upload foto gagal." },
           { status: 400, headers: corsHeaders }
@@ -91,7 +93,7 @@ export async function POST(req) {
     }
 
     // ===============================
-    // Bersihkan data
+    // Simpan ke DB
     // ===============================
     const uniqueKey = generateUniqueKey();
 
@@ -109,8 +111,7 @@ export async function POST(req) {
         kel: sanitizeString(body.kel),
 
         nama_file: null,
-        path: fileUrl,   // ← Cloudinary secure_url
-
+        path: fileUrl,
         unique_key: uniqueKey,
       },
     });
@@ -123,7 +124,6 @@ export async function POST(req) {
       },
       { status: 201, headers: corsHeaders }
     );
-
   } catch (err) {
     return NextResponse.json(
       { success: false, message: "Server error", error: err.message },
