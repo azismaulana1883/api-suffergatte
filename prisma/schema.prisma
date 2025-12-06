@@ -20,10 +20,9 @@ model biodata {
   kec           String    @db.VarChar(100)
   kel           String    @db.VarChar(100)
   created_at    DateTime? @default(now()) @db.Timestamp(0)
+  path_verify   String?   @db.VarChar(255)
   nama_file     String?   @db.VarChar(255)
   path          String?   @db.VarChar(255)
-
-  // YANG PALING PENTING: tambahkan @unique dan jangan nullable kalau bisa
   unique_key    String    @unique @db.VarChar(255)
 
   @@map("biodata")
