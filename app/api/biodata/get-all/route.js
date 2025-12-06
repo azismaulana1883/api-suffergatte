@@ -2,9 +2,9 @@ import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { sanitizeString, validateBiodata } from "@/lib/validate";
 
-export const runtime = "nodejs"; // WAJIB untuk Cloudinary + env
+export const runtime = "nodejs";
 
-// CORS
+// ===== CORS =====
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
@@ -15,7 +15,7 @@ export function OPTIONS() {
   return NextResponse.json({}, { status: 200, headers: corsHeaders });
 }
 
-// Unique Key Generator
+// ===== Unique Key Generator =====
 function generateUniqueKey() {
   const rand = Math.random().toString(36).substring(2, 10);
   const time = Date.now().toString(36);
@@ -50,7 +50,6 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    // Validasi input
     const err = validateBiodata(body);
     if (err) {
       return NextResponse.json(
@@ -59,16 +58,12 @@ export async function POST(req) {
       );
     }
 
-    // ======================================
-    // UPLOAD FOTO KE CLOUDINARY (FIX VERSION)
-    // ======================================
+    // Upload Cloudinary
     let fileUrl = null;
 
     if (body.foto_base64) {
       const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
       const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET;
-
-      console.log("ENV:", CLOUD_NAME, UPLOAD_PRESET);
 
       if (!CLOUD_NAME || !UPLOAD_PRESET) {
         return NextResponse.json(
@@ -77,24 +72,19 @@ export async function POST(req) {
         );
       }
 
-      const uploadURL = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
-
-      // ❗ Gunakan FormData bawaan runtime, bukan dari 'form-data'
       const form = new FormData();
       form.append("file", body.foto_base64);
       form.append("upload_preset", UPLOAD_PRESET);
 
-      const uploadRes = await fetch(uploadURL, {
-        method: "POST",
-        body: form, // ❗ Jangan tambahkan getHeaders()
-      });
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+        { method: "POST", body: form }
+      );
 
       const uploadJson = await uploadRes.json();
-      console.log("UPLOAD RESPONSE:", uploadJson);
-
       if (!uploadJson.secure_url) {
         return NextResponse.json(
-          { success: false, message: "Upload foto gagal.", debug: uploadJson },
+          { success: false, message: "Upload foto gagal", debug: uploadJson },
           { status: 400, headers: corsHeaders }
         );
       }
@@ -102,9 +92,7 @@ export async function POST(req) {
       fileUrl = uploadJson.secure_url;
     }
 
-    // ======================================
-    // SIMPAN DATA KE DATABASE
-    // ======================================
+    // Save ke DB
     const uniqueKey = generateUniqueKey();
 
     const created = await prisma.biodata.create({
@@ -119,7 +107,6 @@ export async function POST(req) {
         kab: sanitizeString(body.kab),
         kec: sanitizeString(body.kec),
         kel: sanitizeString(body.kel),
-
         nama_file: null,
         path: fileUrl,
         unique_key: uniqueKey,
@@ -127,11 +114,52 @@ export async function POST(req) {
     });
 
     return NextResponse.json(
-      { success: true, unique_key: uniqueKey, data: created },
+      { success: true, data: created, unique_key: uniqueKey },
       { status: 201, headers: corsHeaders }
     );
   } catch (err) {
-    console.log("SERVER ERROR:", err);
+    return NextResponse.json(
+      { success: false, message: "Server error", error: err.message },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+// ======================================
+// PATCH — UPDATE NICKNAME
+// ======================================
+export async function PATCH(req) {
+  try {
+    const { id, unique_key, new_nickname } = await req.json();
+
+    if (!id || !unique_key || !new_nickname) {
+      return NextResponse.json(
+        { success: false, message: "Data tidak lengkap" },
+        { status: 400, headers: corsHeaders }
+      );
+    }
+
+    const user = await prisma.biodata.findFirst({
+      where: { id: Number(id), unique_key },
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "ID atau Unique Key salah!" },
+        { status: 404, headers: corsHeaders }
+      );
+    }
+
+    await prisma.biodata.update({
+      where: { id: Number(id) },
+      data: { nickname: new_nickname },
+    });
+
+    return NextResponse.json(
+      { success: true, message: "Nickname updated" },
+      { status: 200, headers: corsHeaders }
+    );
+  } catch (err) {
     return NextResponse.json(
       { success: false, message: "Server error", error: err.message },
       { status: 500, headers: corsHeaders }
